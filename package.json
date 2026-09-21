@@ -1,0 +1,20 @@
+{
+  "name": "opencode-go-gateway",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Authenticated OpenCode Go gateway. One current OpenCode key and one model unless multikey is requested.",
+  "scripts": {
+    "start": "tsx src/main.ts",
+    "test": "tsx --test test/*.ts"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "dependencies": {
+    "ogw": "github:taituo/ogw#8b4af07"
+  },
+  "devDependencies": {
+    "@types/node": "22.20.4",
+    "tsx": "4.20.5"
+  }
+}
