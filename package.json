@@ -11,7 +11,7 @@
     "node": ">=22"
   },
   "dependencies": {
-    "ogw": "github:taituo/ogw#9012a22"
+    "ogw": "github:taituo/ogw#0f04014"
   },
   "devDependencies": {
     "@types/node": "22.20.4",

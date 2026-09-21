@@ -7,6 +7,7 @@ import {
   createInferenceGateway,
   createTransparentModels,
   openCodeGoAccountsFromEnv,
+  parseFaultSpec,
   startRouteDump,
 } from "ogw";
 import { loadAccounts, resolveBearer, resolveModels, resolveRateLimit } from "./accounts.js";
@@ -22,8 +23,10 @@ const host = process.env.GATEWAY_HOST ?? "127.0.0.1";
 const port = Number(process.env.GATEWAY_PORT ?? process.env.PORT ?? "8788");
 if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error("GATEWAY_PORT must be an integer from 1 to 65535");
 
+const faults = parseFaultSpec(process.env.OGW_FAULTS);
 const { models: runtime } = await createTransparentModels({
   sessionId: process.env.OGW_SESSION_ID ?? "opencode-go-gateway",
+  faults,
   config: {
     openCodeGo: { strategy: "sticky-least-loaded", accounts: openCodeGoAccountsFromEnv() },
   },
