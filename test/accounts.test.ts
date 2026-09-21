@@ -5,34 +5,35 @@ import path from "node:path";
 import test from "node:test";
 import { loadAccounts, resolveModels, resolveRateLimit } from "../src/accounts.js";
 
-test("the default is the single current OpenCode key", () => {
+test("a lone auth file is one key, and every model stays available", () => {
   const dir = mkdtempSync(path.join(tmpdir(), "ogw-auth-"));
   const auth = path.join(dir, "auth.json");
   writeFileSync(auth, JSON.stringify({ "opencode-go": { type: "api", key: "single-key" } }));
-  const loaded = loadAccounts({ OPENCODE_AUTH_FILE: auth });
+  const loaded = loadAccounts({ OPENCODE_AUTH_FILE: auth, XDG_DATA_HOME: dir });
   assert.equal(loaded.mode, "single");
-  assert.deepEqual(loaded.names, ["go-a"]);
-  assert.equal(loaded.env.OPENCODE_GO_KEY_A, "single-key");
-  assert.equal(loaded.stack, "go-a:OPENCODE_GO_KEY_A");
+  assert.deepEqual(loaded.names, ["current"]);
+  assert.equal(loaded.env.OPENCODE_GO_KEY_CURRENT, "single-key");
+  assert.equal(resolveModels({}), undefined);
+  assert.equal(resolveRateLimit({}), 30);
 });
 
-test("multikey is used only when the accounts file is requested", () => {
+test("keys beside the auth file join the current key, without duplicating it", () => {
   const dir = mkdtempSync(path.join(tmpdir(), "ogw-accounts-"));
-  const file = path.join(dir, "accounts.json");
-  writeFileSync(file, JSON.stringify({
+  writeFileSync(path.join(dir, "auth.json"), JSON.stringify({ "opencode-go": { type: "api", key: "aaa" } }));
+  writeFileSync(path.join(dir, "synth-accounts.json"), JSON.stringify({
     accounts: [
       { name: "go-a", env: "OPENCODE_GO_KEY_A", key: "aaa" },
       { name: "go-b", env: "OPENCODE_GO_KEY_B", key: "bbb" },
     ],
   }));
-  const loaded = loadAccounts({ OPENCODE_ACCOUNTS_FILE: file });
+  const loaded = loadAccounts({ OPENCODE_AUTH_FILE: path.join(dir, "auth.json"), XDG_DATA_HOME: dir });
   assert.equal(loaded.mode, "multi");
   assert.deepEqual(loaded.names, ["go-a", "go-b"]);
-  assert.equal(loaded.stack, "go-a:OPENCODE_GO_KEY_A,go-b:OPENCODE_GO_KEY_B");
+  assert.equal(loaded.env.OPENCODE_GO_KEY_A, "aaa");
+  assert.equal(loaded.env.OPENCODE_GO_KEY_B, "bbb");
+  assert.equal(loaded.env.OPENCODE_GO_KEY_CURRENT, undefined);
 });
 
-test("the published model list and rate limit stay narrow unless configured", () => {
-  assert.deepEqual(resolveModels({}), ["gpt-5.6-luna"]);
-  assert.equal(resolveRateLimit({}), 30);
+test("an explicit model list narrows what is published", () => {
   assert.deepEqual(resolveModels({ OPENCODE_GO_MODELS: "gpt-5.6-luna, deepseek-v4-flash" }), ["gpt-5.6-luna", "deepseek-v4-flash"]);
 });

@@ -27,11 +27,14 @@ const { models: runtime } = await createTransparentModels({
     openCodeGo: { strategy: "sticky-least-loaded", accounts: openCodeGoAccountsFromEnv() },
   },
 });
-const backend = new OpenCodeStackGatewayBackend(runtime, { provider: "opencode-go", modelIds: models });
+const backend = new OpenCodeStackGatewayBackend(runtime, {
+  provider: "opencode-go",
+  ...(models ? { modelIds: models } : {}),
+});
 const principal = {
   tenantId: process.env.GATEWAY_TENANT ?? "opencode-go",
   subject: process.env.GATEWAY_SUBJECT ?? "local",
-  allowedModels: models,
+  ...(models ? { allowedModels: models } : {}),
   requestsPerMinute,
 };
 const gateway = createInferenceGateway({
@@ -43,4 +46,4 @@ const gateway = createInferenceGateway({
   tenantPolicy: new CompositeTenantPolicy([new ModelAclPolicy(), new InMemoryTenantRateLimitPolicy()]),
 });
 await gateway.listen();
-console.log(`opencode-go gateway listening at ${gateway.url}; mode=${loaded.mode}; accounts=${loaded.names.join(",")}; models=${models.join(",")}; rpm=${requestsPerMinute}`);
+console.log(`opencode-go gateway listening at ${gateway.url}; mode=${loaded.mode}; accounts=${loaded.names.join(",")}; models=${models?.join(",") ?? "all"}; rpm=${requestsPerMinute}`);

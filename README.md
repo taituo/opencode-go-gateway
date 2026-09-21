@@ -4,13 +4,13 @@ Authenticated OpenAI-compatible front for OpenCode Go. It is the narrow one. [og
 
 By default this process:
 
-- uses the single `opencode-go` key from OpenCode's current auth file
-- publishes one model, `gpt-5.6-luna`
-- allows 30 requests per minute for that bearer
+- pools every current OpenCode Go key it can see, and spreads requests across them
+- publishes every model those keys expose, so two calls can ask for different models at once
+- allows 30 requests per minute for the bearer, shared by all models
 - listens on `127.0.0.1:8788`
 - rejects calls that do not send `GATEWAY_BEARER`
 
-It does not read a multikey file unless you set one. `PI_OPENCODE_GO_STACK` or `OPENCODE_ACCOUNTS_FILE` opts into several keys. `OPENCODE_GO_MODELS` widens the model list. `REQUESTS_PER_MINUTE` changes the cap.
+The current key is the `opencode-go` entry in the auth file. Extra keys are read from `accounts.json` or `synth-accounts.json` in that same directory. A key that is already in the file is not added twice. `OPENCODE_ACCOUNTS_FILE` or `PI_OPENCODE_GO_STACK` replaces that discovery. `OPENCODE_GO_MODELS` narrows the model list. `REQUESTS_PER_MINUTE` changes the cap.
 
 OpenCode's current auth is found in this order:
 
