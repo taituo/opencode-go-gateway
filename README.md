@@ -4,8 +4,9 @@ Authenticated OpenAI-compatible front for OpenCode Go. It is the narrow one. [og
 
 By default this process:
 
-- pools every current OpenCode Go key it can see, and spreads requests across them
+- pools every current OpenCode Go key it can see, and spreads requests across the keys that offer the requested model
 - publishes every model those keys expose, so two calls can ask for different models at once
+- keeps a session on one key per model, and names the choice on `x-ogw-account` and `x-ogw-model`
 - allows 30 requests per minute for the bearer, shared by all models
 - listens on `127.0.0.1:8788`
 - rejects calls that do not send `GATEWAY_BEARER`
