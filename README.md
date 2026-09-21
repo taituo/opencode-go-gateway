@@ -11,7 +11,7 @@ By default this process:
 - listens on `127.0.0.1:8788`
 - rejects calls that do not send `GATEWAY_BEARER`
 
-The current key is the `opencode-go` entry in the auth file. Extra keys are read from `accounts.json` or `synth-accounts.json` in that same directory. A key that is already in the file is not added twice. `OPENCODE_ACCOUNTS_FILE` or `PI_OPENCODE_GO_STACK` replaces that discovery. `OPENCODE_GO_MODELS` narrows the model list. `REQUESTS_PER_MINUTE` changes the cap.
+The current key is the `opencode-go` entry in the auth file. Extra keys are read from `accounts.json` or `synth-accounts.json` in that same directory. A key that is already in the file is not added twice. `OPENCODE_ACCOUNTS_FILE` or `PI_OPENCODE_GO_STACK` replaces that discovery. `OPENCODE_GO_MODELS` narrows the model list. `REQUESTS_PER_MINUTE` changes the cap. `OGW_STATE_FILE` copies the in-memory route table to SQLite on an interval and reads it back on the next start.
 
 OpenCode's current auth is found in this order:
 

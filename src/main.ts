@@ -7,6 +7,7 @@ import {
   createInferenceGateway,
   createTransparentModels,
   openCodeGoAccountsFromEnv,
+  startRouteDump,
 } from "ogw";
 import { loadAccounts, resolveBearer, resolveModels, resolveRateLimit } from "./accounts.js";
 
@@ -27,6 +28,14 @@ const { models: runtime } = await createTransparentModels({
     openCodeGo: { strategy: "sticky-least-loaded", accounts: openCodeGoAccountsFromEnv() },
   },
 });
+const stateFile = process.env.OGW_STATE_FILE;
+if (stateFile) {
+  const intervalMs = Number(process.env.OGW_STATE_INTERVAL_MS ?? "60000");
+  if (!Number.isInteger(intervalMs) || intervalMs < 0) throw new Error("OGW_STATE_INTERVAL_MS must be a non-negative integer");
+  startRouteDump(runtime, stateFile, intervalMs);
+  console.log(`route state ${stateFile} every ${intervalMs}ms`);
+}
+
 const backend = new OpenCodeStackGatewayBackend(runtime, {
   provider: "opencode-go",
   ...(models ? { modelIds: models } : {}),
