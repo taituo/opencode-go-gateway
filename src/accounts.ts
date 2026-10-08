@@ -1,59 +1,84 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { openCodeGoAccountsFromEnv } from "./router/from-env.js";
+
+export interface LoadedAccount {
+  id: string;
+  apiKey: string;
+}
 
 export interface AccountLoad {
   mode: "single" | "multi";
-  /** Value for PI_OPENCODE_GO_STACK. Names environment variables, not the keys. */
-  stack: string;
+  accounts: LoadedAccount[];
   names: string[];
-  /** Env assignments the caller must apply before building the router. */
-  env: Record<string, string>;
+  /** Where the accounts came from (credential name, file path, or env stack). No secrets. */
+  source: string;
 }
 
-interface NamedKey {
-  name: string;
-  envName: string;
-  key: string;
+interface FileEntry {
+  name?: string;
+  env?: string;
+  key?: string;
 }
 
 /**
- * Every current OpenCode Go key is in the pool together.
- * The auth file contributes its `opencode-go` key. `accounts.json` or
- * `synth-accounts.json` beside it, or OPENCODE_ACCOUNTS_FILE, adds the rest.
- * PI_OPENCODE_GO_STACK replaces discovery when the keys are already in the environment.
+ * Every OpenCode Go subscription is in the pool together.
+ *
+ * Sources, in order:
+ * 1. PI_OPENCODE_GO_STACK="go-a:OPENCODE_GO_KEY_A,..." (values name env vars, never keys).
+ * 2. A JSON accounts file {"accounts":[{name,key}]} (the systemd `synth_accounts`
+ *    credential shape) or the older [{name,env,key}] shape. Location:
+ *    OPENCODE_ACCOUNTS_FILE, $CREDENTIALS_DIRECTORY/synth_accounts, or
+ *    accounts.json / synth-accounts.json beside the auth file.
+ * 3. The `opencode-go` key in the auth file alone (OPENCODE_AUTH_FILE,
+ *    $CREDENTIALS_DIRECTORY/opencode_auth, or the OpenCode data directory).
+ *
+ * Keys already in the pool are not added twice.
  */
 export function loadAccounts(env: NodeJS.ProcessEnv = process.env): AccountLoad {
   if (env.PI_OPENCODE_GO_STACK?.trim()) {
-    const names = env.PI_OPENCODE_GO_STACK.split(",").map((entry) => entry.split(":")[0]?.trim()).filter(Boolean);
-    return { mode: names.length > 1 ? "multi" : "single", stack: env.PI_OPENCODE_GO_STACK.trim(), names, env: {} };
+    const parsed = openCodeGoAccountsFromEnv(env.PI_OPENCODE_GO_STACK);
+    const accounts = parsed.map((entry) => {
+      const apiKey = entry.apiKeyEnv ? env[entry.apiKeyEnv] : undefined;
+      if (!apiKey) throw new Error(`Account '${entry.id}' has no key in $${entry.apiKeyEnv ?? "?"}.`);
+      return { id: entry.id, apiKey };
+    });
+    return { mode: accounts.length > 1 ? "multi" : "single", accounts, names: accounts.map((a) => a.id), source: "PI_OPENCODE_GO_STACK" };
   }
-  const found: NamedKey[] = [];
+  const found: LoadedAccount[] = [];
   const accountsFile = resolveAccountsFile(env);
-  if (accountsFile) found.push(...readAccountsFile(accountsFile));
-  const authKey = readAuthKey(env);
-  if (authKey && !found.some((account) => account.key === authKey)) {
-    found.unshift({ name: "current", envName: "OPENCODE_GO_KEY_CURRENT", key: authKey });
+  if (accountsFile) {
+    for (const account of readAccountsFile(accountsFile, env)) {
+      if (!found.some((a) => a.apiKey === account.apiKey)) found.push(account);
+    }
   }
-  if (found.length === 0) throw new Error("OpenCode auth file not found. Set OPENCODE_AUTH_FILE, or place auth.json in the OpenCode data directory.");
-  const assigned: Record<string, string> = {};
-  for (const account of found) assigned[account.envName] = account.key;
+  const authKey = readAuthKey(env);
+  if (authKey && !found.some((a) => a.apiKey === authKey)) {
+    found.unshift({ id: "go-a", apiKey: authKey });
+  }
+  if (found.length === 0) {
+    throw new Error("No OpenCode Go accounts. Provide the synth_accounts credential, OPENCODE_ACCOUNTS_FILE, PI_OPENCODE_GO_STACK, or an auth file with an opencode-go key.");
+  }
   return {
     mode: found.length > 1 ? "multi" : "single",
-    stack: found.map((account) => `${account.name}:${account.envName}`).join(","),
-    names: found.map((account) => account.name),
-    env: assigned,
+    accounts: found,
+    names: found.map((a) => a.id),
+    source: accountsFile ?? resolveAuthFile(env) ?? "auth file",
   };
 }
 
-function readAccountsFile(file: string): NamedKey[] {
-  const { accounts } = JSON.parse(fs.readFileSync(file, "utf8")) as {
-    accounts: Array<{ name: string; env: string; key: string }>;
-  };
+function readAccountsFile(file: string, env: NodeJS.ProcessEnv): LoadedAccount[] {
+  const { accounts } = JSON.parse(fs.readFileSync(file, "utf8")) as { accounts: FileEntry[] };
   if (!Array.isArray(accounts) || accounts.length === 0) throw new Error(`${file} has no accounts`);
-  return accounts.map((account) => {
-    if (!account.name || !account.env || !account.key) throw new Error("each account needs name, env, and key");
-    return { name: account.name, envName: account.env, key: account.key };
+  return accounts.map((entry, index) => {
+    const name = String(entry.name ?? `go-${index + 1}`);
+    const inline = entry.key?.trim() ? entry.key : undefined;
+    const key = inline ?? (entry.env ? env[entry.env] : undefined);
+    if (typeof key !== "string" || !key) {
+      throw new Error(`${file} entry '${name}' needs a key (or an env name whose variable is set)`);
+    }
+    return { id: name, apiKey: key };
   });
 }
 
@@ -66,8 +91,13 @@ function readAuthKey(env: NodeJS.ProcessEnv): string | undefined {
 
 export function resolveAccountsFile(env: NodeJS.ProcessEnv = process.env): string | undefined {
   if (env.OPENCODE_ACCOUNTS_FILE) return env.OPENCODE_ACCOUNTS_FILE;
-  const dirs = new Set<string>();
+  const credentials = env.CREDENTIALS_DIRECTORY;
+  if (credentials) {
+    const fromUnit = path.join(credentials, "synth_accounts");
+    if (fs.existsSync(fromUnit)) return fromUnit;
+  }
   const authFile = resolveAuthFile(env);
+  const dirs = new Set<string>();
   if (authFile) dirs.add(path.dirname(authFile));
   dirs.add(path.join(env.XDG_DATA_HOME ?? path.join(os.homedir(), ".local", "share"), "opencode"));
   for (const dir of dirs) {
@@ -99,20 +129,35 @@ export function resolveBearer(env: NodeJS.ProcessEnv = process.env): string {
     const file = path.join(credentials, "gateway_bearer");
     if (fs.existsSync(file)) return fs.readFileSync(file, "utf8").trim();
   }
-  throw new Error("GATEWAY_BEARER is required");
+  throw new Error("GATEWAY_BEARER is required (or the gateway_bearer credential)");
 }
 
-/** Unset means every model the accounts expose. Set either variable to narrow the list. */
-export function resolveModels(env: NodeJS.ProcessEnv = process.env): string[] | undefined {
-  const raw = env.OPENCODE_GO_MODELS ?? env.OPENCODE_GO_MODEL;
+/** OPENCODE_GO_MODELS="a,b" narrows the served list. Unset means every model the accounts expose. */
+export function resolveModelFilter(env: NodeJS.ProcessEnv = process.env): string[] | undefined {
+  const raw = env.OPENCODE_GO_MODELS;
   if (!raw?.trim()) return undefined;
-  const models = raw.split(",").map((id) => id.trim()).filter(Boolean);
-  if (models.length === 0) throw new Error("OPENCODE_GO_MODEL is empty");
-  return models;
+  return raw.split(",").map((id) => id.trim()).filter(Boolean);
 }
 
-export function resolveRateLimit(env: NodeJS.ProcessEnv = process.env): number {
-  const value = Number(env.REQUESTS_PER_MINUTE ?? "30");
-  if (!Number.isInteger(value) || value < 1) throw new Error("REQUESTS_PER_MINUTE must be a positive integer");
+/** Sanity-checked at startup: the gateway refuses to start if its default model is not served. */
+export function resolveDefaultModel(env: NodeJS.ProcessEnv = process.env): string {
+  return env.OPENCODE_GO_MODEL?.trim() || "gpt-5.6-luna";
+}
+
+/** A conversation's account stickiness expires after this idle time. Default 10 min. */
+export function resolveStickyIdleMs(env: NodeJS.ProcessEnv = process.env): number {
+  const value = Number(env.OPENCODE_STICKY_IDLE_MS ?? 10 * 60 * 1000);
+  if (!Number.isFinite(value) || value < 0) throw new Error("OPENCODE_STICKY_IDLE_MS must be a non-negative number of milliseconds");
   return value;
+}
+
+export function resolveHost(env: NodeJS.ProcessEnv = process.env): string {
+  return env.GATEWAY_HOST?.trim() || "10.91.1.1";
+}
+
+export function resolvePort(env: NodeJS.ProcessEnv, name: string, fallback: number): number {
+  const raw = env[name];
+  const port = raw === undefined || raw === "" ? fallback : Number(raw);
+  if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error(`${name} must be an integer from 1 to 65535`);
+  return port;
 }

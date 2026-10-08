@@ -2,7 +2,7 @@
   "name": "opencode-go-gateway",
   "version": "0.1.0",
   "type": "module",
-  "description": "Authenticated OpenCode Go gateway. One current OpenCode key and one model unless multikey is requested.",
+  "description": "Authenticated OpenAI-compatible front for OpenCode Go subscriptions: all Go models, sticky multi-account routing, telemetry.",
   "scripts": {
     "start": "tsx src/main.ts",
     "test": "tsx --test test/*.ts"
@@ -11,10 +11,11 @@
     "node": ">=22"
   },
   "dependencies": {
-    "ogw": "github:taituo/ogw#0f04014"
+    "@earendil-works/pi-ai": "0.85.1",
+    "@earendil-works/pi-coding-agent": "0.85.1",
+    "tsx": "4.22.1"
   },
   "devDependencies": {
-    "@types/node": "22.20.4",
-    "tsx": "4.20.5"
+    "@types/node": "22.20.4"
   }
 }
